@@ -1,0 +1,17 @@
+vpc_name: "Sample-vpc"
+
+#VPC Range
+vpcCidr: '172.20.0.0/16'
+
+#Subnets Range
+PubSub1Cidr: '172.20.1.0/24'
+PrivSub1Cidr: '172.20.2.0/24'
+
+#Region Name
+region: "us-west-1"
+
+#Zone Name
+zone1: us-west-1a
+zone2: us-west-1b
+
+state: present

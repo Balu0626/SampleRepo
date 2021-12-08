@@ -1,0 +1,112 @@
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Import VPC Variables
+      include_vars: vars/vpc_setup
+
+    - name: Create Sample Project VPC
+      ec2_vpc_net:
+        name: "{{vpc_name}}"
+        cidr_block: "{{vpcCidr}}"
+        region: "{{region}}"
+        dns_support: yes
+        dns_hostnames: yes
+        tenancy: default
+        state: "{{state}}"
+      register: vpcout
+
+    #  - debug:
+    #      var: vpcout
+
+    - name: create Public Subnet 1 in Zone 1
+      ec2_vpc_subnet:
+        vpc_id: "{{vpcout.vpc.id}}"
+        region: "{{region}}"
+        az: "{{zone1}}"
+        state: "{{state}}"
+        cidr: "{{PubSub1Cidr}}"
+        map_public: yes
+        resource_tags:
+          Name: sample-pubsub1
+      register: pubsub1_out
+
+    - name: create Private Subnet 1 in Zone 2
+      ec2_vpc_subnet:
+        vpc_id: "{{vpcout.vpc.id}}"
+        region: "{{region}}"
+        az: "{{zone2}}"
+        state: "{{state}}"
+        cidr: "{{PrivSub1Cidr}}"
+        resource_tags:
+          Name: sample-privsub1
+      register: privsub1_out
+
+    - name: create Internet Gateway
+      ec2_vpc_igw:
+        vpc_id: "{{vpcout.vpc.id}}"
+        region: "{{region}}"
+        state: "{{state}}"
+        resource_tags:
+          Name: sample-IGW
+      register: igw_out
+
+    - name: Set up public subnet route table
+      ec2_vpc_route_table:
+        vpc_id: "{{vpcout.vpc.id}}"
+        region: "{{region}}"
+        tags:
+          Name: Sample-PubRT
+        subnets:
+          - "{{pubsub1_out.subnet.id}}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{igw_out.gateway_id}}"
+      register: pubRT_out
+    - name: create a nat gateway and allocate new EIP if a nat gateway doesn't not exist in the
+      ec2_vpc_nat_gateway:
+        state: "{{state}}"
+        subnet_id: "{{pubsub1_out.subnet.id}}"
+        wait: yes
+        region: "{{region}}"
+        if_exist_do_not_create: true
+      register: NATGW_OUT
+    - name: set up private subnet route table
+      ec2_vpc_route_table:
+        vpc_id: "{{vpcout.vpc.id}}"
+        region: "{{region}}"
+        tags:
+          Name: Sample-PrivRT
+        subnets:
+          - "{{privsub1_out.subnet.id}}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{NATGW_OUT.nat_gateway_id}}"
+      register: privRT_out
+
+    - debug:
+        var: "{{item}}"
+      loop:
+        - vpcout.vpc.id
+        - pubsub1_out.subnet.id
+        - privsub1_out.subnet.id
+        - igw_out.gateway.id
+        - pubRT_out.route_table.id
+        - NATGW_OUT.nat_gateway_id
+        - privRT_out.route_table.id
+
+    - set_fact:
+        vpcid: "{{vpcout.vpc.id}}"
+        pubsub1id: "{{ pubsub1_out.subnet.id }}"
+        privsub1id: "{{ privsub1_out.subnet.id }}"
+        igwid: "{{ igw_out.gateway_id }}"
+        pubRTid: "{{ pubRT_out.route_table.id }}"
+        NATGWid: "{{ NATGW_OUT.nat_gateway_id }}"
+        privRTid: "{{ privRT_out.route_table.id }}"
+        cacheable: yes
+
+    - name: create variables file for vpc output
+      copy:
+        content: "vpcid: {{vpcout.vpc.id}}\npubsub1id: {{ pubsub1_out.subnet.id }}\nprivsub1id: {{ privsub1-out.subnet.id }}\nigwid: {{ igw_out.gateway.id }}\npubRTid: {{ pubRT_out.route_table.id }}\nNATGWid: {{ NATGW_OUT.nat_gateway_id }}\nprivRTid: {{ privRT_out.route_table.id }}\n"
+        dest: vars/output_vars
+
+
